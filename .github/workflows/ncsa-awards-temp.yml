@@ -1,0 +1,161 @@
+name: Configure NCSA awards
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ncsa-awards-temp.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure NCSA awards
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          path = Path("Leagues/NCSA_Classic/National College Sporting Association.txt")
+          text = path.read_text(encoding="utf-8")
+          data = json.loads(text)
+          awards = data["awards"]
+          by_id = {a["id"]: a for a in awards}
+
+          def set_award(i, *, name=None, short=None, enabled=None, min_games=None,
+                        hof=None, calculation=None, years_pro=None,
+                        max_started=None, weights=None):
+              a = by_id[i]
+              if name is not None: a["name"] = name
+              if short is not None: a["shortName"] = short
+              if enabled is not None: a["enabled"] = enabled
+              if min_games is not None: a["minGames"] = min_games
+              if hof is not None: a["HOFValue"] = hof
+              if calculation is not None: a["calculation"] = calculation
+              if years_pro is not None: a["yearsPro"] = years_pro
+              if max_started is not None: a["maxStarted"] = max_started
+              if weights is not None:
+                  fields = ["MIN","PM","POS","PTS","FGM","FGA","FGP","TPM","TPA","TPP",
+                            "FTM","FTA","FTP","DRB","ORB","REB","AST","STL","BLK","TO","PF",
+                            "DD","TD","POTG","W","L"]
+                  for field in fields:
+                      a[field] = 0
+                  for field, value in weights.items():
+                      a[field] = value
+
+          # Existing NCSA honors, adapted for a 40-game college season.
+          set_award(1, name="National Tournament Most Outstanding Player", short="NT MOP")
+          set_award(2, name="National Player of the Year", short="NPOY", min_games=30)
+          set_award(3, name="National Defensive Player of the Year", short="NDPOY", min_games=30)
+          set_award(4, name="Freshman of the Year", short="FROY", min_games=24)
+          set_award(5, name="Reserve Player of the Year", short="RPOY", min_games=24)
+          set_award(6, name="Breakthrough Player of the Year", short="BPOY", min_games=24)
+          set_award(7, name="National Scoring Crown", short="PTS CROWN", min_games=24)
+          set_award(8, name="National Rebounding Crown", short="REB CROWN", min_games=24)
+          set_award(9, name="National Assist Crown", short="AST CROWN", min_games=24)
+          set_award(10, name="National Steals Crown", short="STL CROWN", min_games=24)
+          set_award(11, name="National Blocks Crown", short="BLK CROWN", min_games=24)
+
+          # Custom slots 12-20.
+          set_award(
+              12, name="National Offensive Player of the Year", short="OPOY",
+              enabled=True, min_games=30, hof=5,
+              weights={"PTS":1.35,"AST":0.8,"REB":0.4,"FGM":0.5,"FGA":-0.45,
+                       "TO":-0.9,"W":0.2}
+          )
+          set_award(
+              13, name="National Two-Way Player of the Year", short="TWO-WAY",
+              enabled=True, min_games=30, hof=5,
+              weights={"PTS":0.75,"REB":0.8,"AST":0.35,"STL":2.0,"BLK":1.8,
+                       "TO":-0.6,"PM":0.35,"W":0.15}
+          )
+          set_award(
+              14, name="Long Range Excellence Award", short="LONG RANGE",
+              enabled=True, min_games=24, hof=2,
+              weights={"TPM":1.0,"TPP":0.15}
+          )
+          set_award(
+              15, name="Interior Excellence Award", short="INTERIOR",
+              enabled=True, min_games=24, hof=3,
+              weights={"REB":1.25,"ORB":0.6,"BLK":1.6,"FGP":0.08,"PTS":0.35}
+          )
+          set_award(
+              16, name="National Playmaker of the Year", short="PLAYMAKER",
+              enabled=True, min_games=24, hof=3,
+              weights={"AST":1.5,"TO":-1.15,"PTS":0.35,"PM":0.25,"W":0.15}
+          )
+          set_award(
+              17, name="Winning Impact Award", short="IMPACT",
+              enabled=True, min_games=30, hof=4,
+              weights={"PM":1.0,"W":0.55,"PTS":0.35,"REB":0.35,"AST":0.35,
+                       "STL":0.7,"BLK":0.7,"TO":-0.35}
+          )
+          set_award(
+              18, name="Double-Double Leader", short="DD LEAD",
+              enabled=True, min_games=24, hof=1,
+              weights={"DD":1.0}
+          )
+          set_award(
+              19, name="Triple-Double Leader", short="TD LEAD",
+              enabled=True, min_games=24, hof=2,
+              weights={"TD":1.0}
+          )
+          set_award(
+              20, name="Game Changer Award", short="GAME CHANGER",
+              enabled=True, min_games=24, hof=2,
+              weights={"POTG":1.0}
+          )
+
+          # Replace only the top-level awards array so the rest of the large save stays byte-for-byte intact.
+          start = text.index('"awards":[') + len('"awards":')
+          end = text.index(',"records":', start)
+          new_awards = json.dumps(awards, separators=(",", ":"))
+          updated = text[:start] + new_awards + text[end:]
+          path.write_text(updated, encoding="utf-8")
+
+          # Validate the written file and the exact IDs.
+          check = json.loads(path.read_text(encoding="utf-8"))
+          chk = {a["id"]: a for a in check["awards"]}
+          expected = {
+              1: ("National Tournament Most Outstanding Player", "NT MOP"),
+              2: ("National Player of the Year", "NPOY"),
+              3: ("National Defensive Player of the Year", "NDPOY"),
+              4: ("Freshman of the Year", "FROY"),
+              5: ("Reserve Player of the Year", "RPOY"),
+              6: ("Breakthrough Player of the Year", "BPOY"),
+              7: ("National Scoring Crown", "PTS CROWN"),
+              8: ("National Rebounding Crown", "REB CROWN"),
+              9: ("National Assist Crown", "AST CROWN"),
+              10: ("National Steals Crown", "STL CROWN"),
+              11: ("National Blocks Crown", "BLK CROWN"),
+              12: ("National Offensive Player of the Year", "OPOY"),
+              13: ("National Two-Way Player of the Year", "TWO-WAY"),
+              14: ("Long Range Excellence Award", "LONG RANGE"),
+              15: ("Interior Excellence Award", "INTERIOR"),
+              16: ("National Playmaker of the Year", "PLAYMAKER"),
+              17: ("Winning Impact Award", "IMPACT"),
+              18: ("Double-Double Leader", "DD LEAD"),
+              19: ("Triple-Double Leader", "TD LEAD"),
+              20: ("Game Changer Award", "GAME CHANGER"),
+          }
+          for i, pair in expected.items():
+              assert (chk[i]["name"], chk[i]["shortName"]) == pair
+          for i in range(12, 21):
+              assert chk[i]["enabled"] is True
+
+      - name: Commit changes and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/ncsa-awards-temp.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Leagues/NCSA_Classic/National College Sporting Association.txt" .github/workflows/ncsa-awards-temp.yml
+          git commit -m "Configure NCSA awards for 40-game season"
+          git push
